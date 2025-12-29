@@ -64,3 +64,6 @@ Desktop.ini
 # キャッシュ
 *.cache
 .cache/
+
+# SQLite データベース
+db/*.db

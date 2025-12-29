@@ -27,6 +27,10 @@ gem 'logger', '~> 1.6'
 # 進捗表示
 gem 'ruby-progressbar', '~> 1.13'
 
+# データベース（履歴管理用）
+gem 'sequel', '~> 5.77'
+gem 'sqlite3', '~> 1.7'
+
 group :development, :test do
   gem 'rspec', '~> 3.12'
   gem 'webmock', '~> 3.19'

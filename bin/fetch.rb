@@ -15,6 +15,10 @@ require 'ebay_url_parser'
 require 'ebay_api_client'
 require 'balance_calculator'
 require 'exchange_rate_client'
+require 'history_analyzer'
+
+# db ディレクトリを読み込みパスに追加
+$LOAD_PATH.unshift(File.join(__dir__, '..', 'db'))
 
 # eBay カメラリサーチツール CLI
 class EbayCameraResearchCLI < Thor
@@ -24,6 +28,7 @@ class EbayCameraResearchCLI < Thor
   option :dry_run, type: :boolean, default: false, desc: '実際にはAPIを呼ばない'
   option :delay, type: :numeric, default: 1, desc: 'API呼び出し間隔（秒）'
   option :with_price, type: :boolean, default: false, desc: '価格情報も取得'
+  option :save_history, type: :boolean, default: true, desc: '履歴をDBに保存'
   def fetch_all
     setup_logger
     logger.info('Starting fetch_all...')
@@ -31,7 +36,7 @@ class EbayCameraResearchCLI < Thor
     products = sheets_client.read_all_products
     logger.info("Total products: #{products.length}")
 
-    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price])
+    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price], save_history: options[:save_history])
   end
 
   desc 'fetch_batch BATCH_NUMBER', '指定バッチのデータを取得（1バッチ=500件）'
@@ -39,6 +44,7 @@ class EbayCameraResearchCLI < Thor
   option :dry_run, type: :boolean, default: false, desc: '実際にはAPIを呼ばない'
   option :delay, type: :numeric, default: 1, desc: 'API呼び出し間隔（秒）'
   option :with_price, type: :boolean, default: false, desc: '価格情報も取得'
+  option :save_history, type: :boolean, default: true, desc: '履歴をDBに保存'
   def fetch_batch(batch_number)
     setup_logger
     batch_num = batch_number.to_i
@@ -52,13 +58,14 @@ class EbayCameraResearchCLI < Thor
     products = sheets_client.read_products(start_row: start_row, end_row: end_row)
     logger.info("Products in batch: #{products.length}")
 
-    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price])
+    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price], save_history: options[:save_history])
   end
 
   desc 'fetch_maker MAKER', '指定メーカーのデータを取得'
   option :dry_run, type: :boolean, default: false, desc: '実際にはAPIを呼ばない'
   option :delay, type: :numeric, default: 1, desc: 'API呼び出し間隔（秒）'
   option :with_price, type: :boolean, default: false, desc: '価格情報も取得'
+  option :save_history, type: :boolean, default: true, desc: '履歴をDBに保存'
   def fetch_maker(maker)
     setup_logger
     logger.info("Fetching maker: #{maker}")
@@ -66,7 +73,7 @@ class EbayCameraResearchCLI < Thor
     products = sheets_client.read_products_by_maker(maker)
     logger.info("Products for #{maker}: #{products.length}")
 
-    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price])
+    process_products(products, dry_run: options[:dry_run], delay: options[:delay], with_price: options[:with_price], save_history: options[:save_history])
   end
 
   desc 'analyze_price KEYWORD', '指定キーワードの価格帯分析'
@@ -301,7 +308,112 @@ class EbayCameraResearchCLI < Thor
     puts "   → パラメータ: #{sold_params}"
   end
 
+  # ========================================
+  # データベース関連コマンド
+  # ========================================
+
+  desc 'db_migrate', 'データベースのマイグレーションを実行'
+  def db_migrate
+    require 'database'
+
+    puts 'Running database migrations...'
+    Database.migrate!
+    puts "✅ Migration completed. Current version: #{Database.current_version}"
+  end
+
+  desc 'sync_to_db', 'スプレッドシートの商品データをDBに同期'
+  def sync_to_db
+    setup_logger
+    require 'database'
+    require 'models/product'
+
+    puts 'Syncing products from spreadsheet to database...'
+
+    products = sheets_client.read_all_products
+    progressbar = ProgressBar.create(
+      total: products.length,
+      format: '%a %b▓%i %p%% %t',
+      progress_mark: '█',
+      remainder_mark: '░'
+    )
+
+    products.each do |sheet_product|
+      Product.sync_from_sheet(sheet_product)
+      progressbar.increment
+    end
+
+    puts "\n✅ Synced #{products.length} products to database"
+  end
+
+  desc 'trend PRODUCT_NAME', '商品のトレンド分析を表示'
+  option :days, type: :numeric, default: 30, desc: '分析期間（日数）'
+  def trend(product_name)
+    require 'database'
+    require 'models/product'
+
+    products = Product.search_by_name(product_name)
+
+    if products.empty?
+      puts "❌ 商品「#{product_name}」が見つかりませんでした"
+      puts '   ヒント: 先に sync_to_db コマンドでデータを同期してください'
+      return
+    end
+
+    products.each do |product|
+      puts HistoryAnalyzer.visualize_trend(product, days: options[:days])
+      puts '' if products.length > 1
+    end
+  end
+
+  desc 'price_changes', '価格変動レポートを表示'
+  option :days, type: :numeric, default: 7, desc: '分析期間（日数）'
+  option :threshold, type: :numeric, default: 10, desc: '変動率の閾値（%）'
+  def price_changes
+    require 'database'
+    require 'models/product'
+
+    threshold = options[:threshold] / 100.0
+    puts HistoryAnalyzer.visualize_price_changes(days: options[:days], threshold: threshold)
+  end
+
+  desc 'rising_products', '上昇トレンドの商品一覧を表示'
+  option :days, type: :numeric, default: 30, desc: '分析期間（日数）'
+  option :limit, type: :numeric, default: 20, desc: '表示件数'
+  def rising_products
+    require 'database'
+    require 'models/product'
+
+    products = HistoryAnalyzer.rising_products(days: options[:days], limit: options[:limit])
+
+    puts '=' * 70
+    puts "📈 上昇トレンド商品（過去#{options[:days]}日）"
+    puts '=' * 70
+
+    if products.empty?
+      puts "\n   該当する商品がありません"
+      puts '   ヒント: データを蓄積するため、定期的に fetch_all を実行してください'
+    else
+      puts "\n   商品名                           | 現在バランス | 変動率"
+      puts '   ' + '-' * 60
+
+      products.each do |item|
+        puts format('   %-35s | %11.2f | %+.1f%%',
+                    truncate_name(item[:product].product_name, 35),
+                    item[:current_balance] || 0,
+                    item[:balance_change] || 0)
+      end
+    end
+
+    puts "\n" + '=' * 70
+  end
+
   private
+
+  def truncate_name(str, length)
+    return str if str.nil? || str.length <= length
+
+    str[0, length - 3] + '...'
+  end
 
   def setup_logger
     level = options[:verbose] ? Logger::DEBUG : Logger::INFO
@@ -340,11 +452,19 @@ class EbayCameraResearchCLI < Thor
     )
   end
 
-  def process_products(products, dry_run:, delay:, with_price: false)
+  def process_products(products, dry_run:, delay:, with_price: false, save_history: true)
     return if products.empty?
 
+    # 履歴保存が有効な場合はDBを初期化
+    if save_history
+      require 'database'
+      require 'models/product'
+      require 'models/snapshot'
+      Database.migrate! # マイグレーションが未実行なら実行
+    end
+
     ebay_client.set_delay(delay)
-    
+
     updates = []
     progressbar = ProgressBar.create(
       total: products.length,
@@ -363,7 +483,15 @@ class EbayCameraResearchCLI < Thor
 
       begin
         result = fetch_product_data(product, with_price: with_price)
-        updates << result if result
+
+        if result
+          updates << result
+
+          # 履歴をDBに保存
+          if save_history
+            save_snapshot(product, result)
+          end
+        end
       rescue StandardError => e
         logger.error("Failed to process #{product[:product_name]}: #{e.message}")
       end
@@ -379,6 +507,17 @@ class EbayCameraResearchCLI < Thor
     update_spreadsheet(updates, with_price: with_price) unless updates.empty?
 
     logger.info('Processing completed!')
+    logger.info('Snapshots saved to database') if save_history
+  end
+
+  def save_snapshot(sheet_product, result)
+    # 商品をDBに同期
+    db_product = Product.sync_from_sheet(sheet_product)
+
+    # スナップショットを保存
+    Snapshot.record(db_product, result)
+  rescue StandardError => e
+    logger.warn("Failed to save snapshot for #{sheet_product[:product_name]}: #{e.message}")
   end
 
   def fetch_product_data(product, with_price: false)
