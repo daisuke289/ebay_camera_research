@@ -23,8 +23,11 @@ class Product < Sequel::Model
 
   # スプレッドシートのデータから商品を作成または更新
   # @param sheet_data [Hash] スプレッドシートから読み込んだデータ
-  # @return [Product]
+  # @return [Product, nil] 商品名が空の場合はnilを返す
   def self.sync_from_sheet(sheet_data)
+    # 商品名が空の行はスキップ
+    return nil if sheet_data[:product_name].nil? || sheet_data[:product_name].to_s.strip.empty?
+
     product = find(row_number: sheet_data[:row_number])
 
     if product

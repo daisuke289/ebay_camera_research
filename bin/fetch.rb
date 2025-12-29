@@ -338,12 +338,21 @@ class EbayCameraResearchCLI < Thor
       remainder_mark: '░'
     )
 
+    synced_count = 0
+    skipped_count = 0
+
     products.each do |sheet_product|
-      Product.sync_from_sheet(sheet_product)
+      result = Product.sync_from_sheet(sheet_product)
+      if result
+        synced_count += 1
+      else
+        skipped_count += 1
+      end
       progressbar.increment
     end
 
-    puts "\n✅ Synced #{products.length} products to database"
+    puts "\n✅ Synced #{synced_count} products to database"
+    puts "⏭️  Skipped #{skipped_count} empty rows" if skipped_count.positive?
   end
 
   desc 'trend PRODUCT_NAME', '商品のトレンド分析を表示'
