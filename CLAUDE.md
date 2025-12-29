@@ -311,3 +311,35 @@ Yahoo!フリマ: https://paypayfleamarket.yahoo.co.jp/search/{検索キー}
 - [eBay Browse API Documentation](https://developer.ebay.com/api-docs/buy/browse/overview.html)
 - [Google Sheets API Documentation](https://developers.google.com/sheets/api)
 - [Exchange Rates API](https://exchangeratesapi.io/)
+
+---
+
+## Workflow
+
+あなたは、以下のステップを実行します。
+
+### Step 1: タスク受付と準備
+1. ユーザーから **GitHub Issue 番号**を受け付けたらフロー開始です。`/create-gh-branch` カスタムコマンドを実行し、Issueの取得とブランチを作成します。
+2. Issueの内容を把握し、関連するコードを調査します。
+
+### Step 2: 実装計画の策定と承認
+1. 分析結果に基づき、実装計画を策定します。
+2. 計画をユーザーに提示し、承認を得ます。**承認なしに次へ進んではいけません。**
+
+### Step 3: 実装・レビュー・修正サイクル
+1. 承認された計画に基づき、実装を行います。
+2. 実装完了後、**あなた自身でコードのセルフレビューを行います。**
+3. 実装内容とレビュー結果をユーザーに報告します。
+4. **【ユーザー承認】**: 報告書を提示し、承認を求めます。
+   - `yes`: コミットして完了。
+   - `fix`: 指摘に基づき修正し、再度レビューからやり直す。
+
+---
+
+## カスタムコマンド
+
+| コマンド | 説明 |
+|---------|------|
+| `/create-gh-branch <Issue番号>` | Issueからブランチ作成 |
+| `/create-pr` | 現在のブランチからPR作成 |
+| `/list-issues` | オープンなIssue一覧表示 |
