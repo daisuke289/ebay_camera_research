@@ -15,10 +15,11 @@ require 'ebay_url_parser'
 require 'ebay_api_client'
 require 'balance_calculator'
 require 'exchange_rate_client'
-require 'history_analyzer'
 
 # db ディレクトリを読み込みパスに追加
 $LOAD_PATH.unshift(File.join(__dir__, '..', 'db'))
+
+# Note: history_analyzer は DB依存のため、必要時に遅延ロードする
 
 # eBay カメラリサーチツール CLI
 class EbayCameraResearchCLI < Thor
@@ -350,6 +351,7 @@ class EbayCameraResearchCLI < Thor
   def trend(product_name)
     require 'database'
     require 'models/product'
+    require 'history_analyzer'
 
     products = Product.search_by_name(product_name)
 
@@ -371,6 +373,7 @@ class EbayCameraResearchCLI < Thor
   def price_changes
     require 'database'
     require 'models/product'
+    require 'history_analyzer'
 
     threshold = options[:threshold] / 100.0
     puts HistoryAnalyzer.visualize_price_changes(days: options[:days], threshold: threshold)
@@ -382,6 +385,7 @@ class EbayCameraResearchCLI < Thor
   def rising_products
     require 'database'
     require 'models/product'
+    require 'history_analyzer'
 
     products = HistoryAnalyzer.rising_products(days: options[:days], limit: options[:limit])
 
